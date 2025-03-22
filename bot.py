@@ -27,28 +27,28 @@ def get_live_score():
         match_title = soup.find("h1", class_="cb-nav-hdr cb-font-18 line-ht24").get_text(strip=True)
 
         # Score and over
-        score_section = soup.find("div", class_="cb-min-bat-rw")
-        over = score_section.find("span", class_="text-gray").get_text(strip=True)
-        score = score_section.find("span", class_="cb-font-20 text-bold").get_text(strip=True)
+        score_section = soup.find("div", class_="cb-col cb-col-100 cb-min-txt")
+        over = score_section.find("span", class_="cb-col cb-col-8 text-bold text-black text-right").get_text(strip=True)
+        score = score_section.find("span", class_="cb-col cb-col-8 text-bold text-black").get_text(strip=True)
 
         # Batsmen info
-        batsmen = soup.find_all("div", class_="cb-min-itm-rw")
+        batsmen = soup.find_all("div", class_="cb-col cb-col-50")
         batsman_info = []
         for batsman in batsmen[:2]:
-            name = batsman.find("a").get_text(strip=True)
-            stats = batsman.find_all("div")
-            runs = stats[2].get_text(strip=True)
-            balls = stats[3].get_text(strip=True)
+            name = batsman.find("div", class_="cb-col cb-col-33").get_text(strip=True)
+            stats = batsman.find_all("div", class_="cb-col cb-col-33 text-right")
+            runs = stats[0].get_text(strip=True)
+            balls = stats[1].get_text(strip=True)
             batsman_info.append(f"{name} {runs}({balls})")
 
         # Bowler info (placeholder if not found)
-        bowler_section = soup.find("div", class_="cb-min-itm-rw", id="bowler")
+        bowler_section = soup.find("div", class_="cb-col cb-col-100 cb-min-bowl")
         if bowler_section:
             bowler_name = bowler_section.find("a").get_text(strip=True)
-            bowler_stats = bowler_section.find_all("div")
-            bowler_overs = bowler_stats[1].get_text(strip=True)
-            bowler_runs = bowler_stats[2].get_text(strip=True)
-            bowler_wickets = bowler_stats[3].get_text(strip=True)
+            bowler_stats = bowler_section.find_all("div", class_="cb-col cb-col-33 text-right")
+            bowler_overs = bowler_stats[0].get_text(strip=True)
+            bowler_runs = bowler_stats[1].get_text(strip=True)
+            bowler_wickets = bowler_stats[2].get_text(strip=True)
         else:
             bowler_name = "N/A"
             bowler_overs = "0"
@@ -56,8 +56,8 @@ def get_live_score():
             bowler_wickets = "0"
 
         # Last ball commentary
-        commentary_section = soup.find("div", class_="cb-col cb-col-100 cb-ltst-wgt-hdr")
-        last_ball = commentary_section.find("div", class_="cb-min-inf cb-col-100 cb-min-inf-sub").get_text(strip=True)
+        commentary_section = soup.find("div", class_="cb-col cb-col-100 cb-com-ln")
+        last_ball = commentary_section.find("div", class_="cb-col cb-col-100 cb-com-ln-text").get_text(strip=True)
 
         message = (
             f"🏏 *{match_title}*\n\n"
