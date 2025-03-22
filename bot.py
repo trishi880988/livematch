@@ -1,74 +1,64 @@
 import logging
 import requests
 from bs4 import BeautifulSoup
-from telegram import Update, Bot
+from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from pytz import utc
+import pytz
 
-# Bot Token
-TOKEN = '7754892338:AAHkHR-su65KeFkyU7vsu1kkkO38f4IkQio'
+# Telegram Bot Token
+TOKEN = "7754892338:AAHkHR-su65KeFkyU7vsu1kkkO38f4IkQio"
 
-# User list to store chat IDs
-subscribed_users = []
-
-# Enable logging
+# Logging setup
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
-# Function to scrape live data
-def get_live_score():
-    url = "https://www.cricbuzz.com/live-cricket-scores/114960/kkr-vs-rcb-1st-match-indian-premier-league-2025"
-    response = requests.get(url)
+# Users list to store chat IDs
+users = []
+
+# Scrape function
+def scrape_live_score():
+    url = 'https://www.cricbuzz.com/live-cricket-scores/114960/kkr-vs-rcb-1st-match-indian-premier-league-2025'
+    response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
     soup = BeautifulSoup(response.content, 'html.parser')
 
     try:
-        score = soup.find('div', class_='cb-min-bat-rw').get_text(strip=True)
-        batsmen = soup.find_all('div', class_='cb-col cb-col-100 cb-min-itm-rw')
-        batsman_info = '\n'.join([b.get_text(strip=True) for b in batsmen])
+        title = soup.find('h1', class_='cb-nav-hdr cb-font-16 line-ht24').get_text(strip=True)
+        status = soup.find('div', class_='cb-text-inprogress').get_text(strip=True)
+        score = soup.find('div', class_='cb-col cb-col-67 cb-scrs-wrp').get_text(strip=True)
+        batsman = soup.find_all('div', class_='cb-col cb-col-100 cb-scrd-itms')[0].get_text(strip=True)
+        bowler = soup.find_all('div', class_='cb-col cb-col-100 cb-scrd-itms')[2].get_text(strip=True)
 
-        commentary = soup.find('div', class_='cb-col cb-col-100 cb-ltst-wgt-hdr').find('div', class_='cb-col cb-col-100 cb-min-txt').get_text(strip=True)
-
-        return f'🏏 *Live Score:*
-{score}
-
-👥 *Batsmen Info:*
-{batsman_info}
-
-📝 *Commentary:*
-{commentary}'
+        return f'''🏏 *Live Score Update!*
+*Match:* {title}
+*Status:* {status}
+*Score:* {score}
+*Batsman:* {batsman}
+*Bowler:* {bowler}'''
     except Exception as e:
-        logger.error(f"Error fetching live score: {e}")
+        logging.error(f"Error fetching live score: {e}")
         return None
 
-# Function to send updates to all users
-async def live_updates():
-    message = get_live_score()
-    if message:
-        for chat_id in subscribed_users:
-            try:
-                await bot.send_message(chat_id=chat_id, text=message, parse_mode='Markdown')
-            except Exception as e:
-                logger.error(f"Error sending message to {chat_id}: {e}")
-
-# /start command
+# Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    if chat_id not in subscribed_users:
-        subscribed_users.append(chat_id)
-        await update.message.reply_text("✅ You are subscribed for IPL live updates!")
-    else:
-        await update.message.reply_text("ℹ️ You are already subscribed!")
+    if chat_id not in users:
+        users.append(chat_id)
+    await update.message.reply_text("✅ You will now receive live IPL updates!")
 
-# Initialize bot and scheduler
-bot = Bot(TOKEN)
+# Job to send live updates
+async def live_updates():
+    message = scrape_live_score()
+    if message:
+        for user_id in users:
+            await app.bot.send_message(chat_id=user_id, text=message, parse_mode="Markdown")
+
+# Main Application
 app = ApplicationBuilder().token(TOKEN).build()
-scheduler = AsyncIOScheduler(timezone=utc)
+app.add_handler(CommandHandler("start", start))
+
+# Scheduler Setup with pytz timezone
+scheduler = AsyncIOScheduler(timezone=pytz.utc)
 scheduler.add_job(live_updates, 'interval', seconds=30)
 scheduler.start()
 
-# Handlers
-app.add_handler(CommandHandler("start", start))
-
-# Run the bot
 app.run_polling()
