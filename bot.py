@@ -1,20 +1,21 @@
 import requests
 from bs4 import BeautifulSoup
-from telegram.ext import Updater, CommandHandler
+from telegram import Update, Bot
+from telegram.ext import Updater, CommandHandler, CallbackContext
 import logging
 import time
 
-# लॉगिंग सेटअप
+# Set up logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# आपका टेलीग्राम बॉट टोकन
+# Your Telegram bot token
 TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
 
-# उपयोगकर्ताओं की सूची जो अपडेट प्राप्त करेंगे
+# Users set
 users = set()
 last_update = None
 
-# लाइव स्कोर प्राप्त करने का फंक्शन
+# Function to fetch live score
 def get_live_score():
     url = "https://www.cricbuzz.com/live-cricket-scores/114960/kkr-vs-rcb-1st-match-indian-premier-league-2025"
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -22,34 +23,42 @@ def get_live_score():
     soup = BeautifulSoup(response.content, "html.parser")
 
     try:
-        # मैच शीर्षक
+        # Match title
         match_title = soup.find("h1", class_="cb-nav-hdr cb-font-18 line-ht24").get_text(strip=True)
 
-        # ओवर और स्कोर
+        # Score and over
         score_section = soup.find("div", class_="cb-min-bat-rw")
         over = score_section.find("span", class_="text-gray").get_text(strip=True)
         score = score_section.find("span", class_="cb-font-20 text-bold").get_text(strip=True)
 
-        # बल्लेबाज और गेंदबाज की जानकारी
+        # Batsmen info
         batsmen = soup.find_all("div", class_="cb-min-itm-rw")
         batsman_info = []
-        for batsman in batsmen:
+        for batsman in batsmen[:2]:
             name = batsman.find("a").get_text(strip=True)
-            runs = batsman.find_all("div")[2].get_text(strip=True)
-            balls = batsman.find_all("div")[3].get_text(strip=True)
+            stats = batsman.find_all("div")
+            runs = stats[2].get_text(strip=True)
+            balls = stats[3].get_text(strip=True)
             batsman_info.append(f"{name} {runs}({balls})")
 
+        # Bowler info (placeholder if not found)
         bowler_section = soup.find("div", class_="cb-min-itm-rw", id="bowler")
-        bowler_name = bowler_section.find("a").get_text(strip=True)
-        bowler_overs = bowler_section.find_all("div")[1].get_text(strip=True)
-        bowler_runs = bowler_section.find_all("div")[2].get_text(strip=True)
-        bowler_wickets = bowler_section.find_all("div")[3].get_text(strip=True)
+        if bowler_section:
+            bowler_name = bowler_section.find("a").get_text(strip=True)
+            bowler_stats = bowler_section.find_all("div")
+            bowler_overs = bowler_stats[1].get_text(strip=True)
+            bowler_runs = bowler_stats[2].get_text(strip=True)
+            bowler_wickets = bowler_stats[3].get_text(strip=True)
+        else:
+            bowler_name = "N/A"
+            bowler_overs = "0"
+            bowler_runs = "0"
+            bowler_wickets = "0"
 
-        # अंतिम गेंद की जानकारी
+        # Last ball commentary
         commentary_section = soup.find("div", class_="cb-col cb-col-100 cb-ltst-wgt-hdr")
-        last_ball = commentary_section.find("div", class_="cb-col cb-col-100 cb-min-itm-rw").get_text(strip=True)
+        last_ball = commentary_section.find("div", class_="cb-min-inf cb-col-100 cb-min-inf-sub").get_text(strip=True)
 
-        # संदेश का प्रारूपण
         message = (
             f"🏏 *{match_title}*\n\n"
             f"🕒 *{over}*\n"
@@ -69,23 +78,20 @@ def get_live_score():
         logging.error(f"Error fetching live score: {e}")
         return None
 
-# /start कमांड हैंडलर
-def start(update, context):
+# /start handler
+def start(update: Update, context: CallbackContext):
     chat_id = update.message.chat_id
     users.add(chat_id)
-    context.bot.send_message(chat_id=chat_id, text="✅ लाइव IPL अपडेट्स शुरू हो गए हैं! बंद करने के लिए /stop टाइप करें।")
+    context.bot.send_message(chat_id=chat_id, text="✅ लाइव IPL अपडेट्स शुरू! /stop भेजकर बंद करें।")
 
-# /stop कमांड हैंडलर
-def stop(update, context):
+# /stop handler
+def stop(update: Update, context: CallbackContext):
     chat_id = update.message.chat_id
-    if chat_id in users:
-        users.remove(chat_id)
-        context.bot.send_message(chat_id=chat_id, text="🛑 लाइव अपडेट्स बंद कर दिए गए हैं।")
-    else:
-        context.bot.send_message(chat_id=chat_id, text="❌ आपने अभी तक अपडेट्स शुरू नहीं किए हैं।")
+    users.discard(chat_id)
+    context.bot.send_message(chat_id=chat_id, text="🛑 लाइव अपडेट्स बंद कर दिए गए हैं।")
 
-# लाइव अपडेट्स भेजने का फंक्शन
-def live_updates(context):
+# Send updates
+def live_updates(context: CallbackContext):
     global last_update
     message = get_live_score()
     if message and message != last_update:
@@ -93,7 +99,7 @@ def live_updates(context):
         for user in users:
             context.bot.send_message(chat_id=user, text=message, parse_mode='Markdown')
 
-# मुख्य फंक्शन
+# Main function
 def main():
     updater = Updater(TOKEN, use_context=True)
     dp = updater.dispatcher
@@ -101,8 +107,7 @@ def main():
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("stop", stop))
 
-    job_queue = updater.job_queue
-    job_queue.run_repeating(live_updates, interval=30, first=0)
+    updater.job_queue.run_repeating(live_updates, interval=30, first=0)
 
     updater.start_polling()
     updater.idle()
