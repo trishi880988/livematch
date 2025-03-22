@@ -9,7 +9,7 @@ import time
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # Your Telegram bot token
-TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+TOKEN = "7754892338:AAHkHR-su65KeFkyU7vsu1kkkO38f4IkQio"
 
 # Users set
 users = set()
