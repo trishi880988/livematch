@@ -1,56 +1,74 @@
+import logging
 import requests
 from bs4 import BeautifulSoup
-from telegram import Bot, Update
-from telegram.ext import CommandHandler, Updater, CallbackContext
-from apscheduler.schedulers.background import BackgroundScheduler
-import logging
+from telegram import Update, Bot
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from pytz import utc
 
-logging.basicConfig(level=logging.INFO)
-
+# Bot Token
 TOKEN = '7754892338:AAHkHR-su65KeFkyU7vsu1kkkO38f4IkQio'
-URL = 'https://www.cricbuzz.com/live-cricket-scores/114960/kkr-vs-rcb-1st-match-indian-premier-league-2025'
 
-bot = Bot(token=TOKEN)
-scheduler = BackgroundScheduler()
-subscribed_users = set()
+# User list to store chat IDs
+subscribed_users = []
 
-def fetch_live_score():
+# Enable logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Function to scrape live data
+def get_live_score():
+    url = "https://www.cricbuzz.com/live-cricket-scores/114960/kkr-vs-rcb-1st-match-indian-premier-league-2025"
+    response = requests.get(url)
+    soup = BeautifulSoup(response.content, 'html.parser')
+
     try:
-        response = requests.get(URL, headers={'User-Agent': 'Mozilla/5.0'})
-        soup = BeautifulSoup(response.text, 'html.parser')
+        score = soup.find('div', class_='cb-min-bat-rw').get_text(strip=True)
+        batsmen = soup.find_all('div', class_='cb-col cb-col-100 cb-min-itm-rw')
+        batsman_info = '\n'.join([b.get_text(strip=True) for b in batsmen])
 
-        # Live score summary
-        score_section = soup.find('div', class_='cb-min-inf cb-col-100 cb-col cb-com-ln')
-        live_score = score_section.get_text(strip=True) if score_section else 'Live score not found'
+        commentary = soup.find('div', class_='cb-col cb-col-100 cb-ltst-wgt-hdr').find('div', class_='cb-col cb-col-100 cb-min-txt').get_text(strip=True)
 
-        # Current batsman & bowler info
-        batsmen = soup.find_all('div', class_='cb-col cb-col-100 cb-scrd-itms')
-        batsman_info = ''
-        for batsman in batsmen[:2]:
-            batsman_info += batsman.get_text(strip=True) + '\n'
+        return f'🏏 *Live Score:*
+{score}
 
-        # Latest ball commentary
-        commentary_section = soup.find('div', class_='cb-col cb-col-100 cb-com-ln')
-        commentary = commentary_section.get_text(strip=True) if commentary_section else 'Commentary not found'
+👥 *Batsmen Info:*
+{batsman_info}
 
-        message = f'🏏 *Live IPL Score Update* 🏏\n\n*{live_score}*\n\n{batsman_info}\n🎙️ {commentary}'
-
-        for user_id in subscribed_users:
-            bot.send_message(chat_id=user_id, text=message, parse_mode='Markdown')
+📝 *Commentary:*
+{commentary}'
     except Exception as e:
-        logging.error(f"Error fetching live score: {e}")
+        logger.error(f"Error fetching live score: {e}")
+        return None
 
-def start(update: Update, context: CallbackContext):
-    user_id = update.message.chat_id
-    subscribed_users.add(user_id)
-    update.message.reply_text('You are now subscribed to Live IPL updates! ✅')
+# Function to send updates to all users
+async def live_updates():
+    message = get_live_score()
+    if message:
+        for chat_id in subscribed_users:
+            try:
+                await bot.send_message(chat_id=chat_id, text=message, parse_mode='Markdown')
+            except Exception as e:
+                logger.error(f"Error sending message to {chat_id}: {e}")
 
-updater = Updater(token=TOKEN, use_context=True)
-dp = updater.dispatcher
-dp.add_handler(CommandHandler('start', start))
+# /start command
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    if chat_id not in subscribed_users:
+        subscribed_users.append(chat_id)
+        await update.message.reply_text("✅ You are subscribed for IPL live updates!")
+    else:
+        await update.message.reply_text("ℹ️ You are already subscribed!")
 
-scheduler.add_job(fetch_live_score, 'interval', seconds=30, id='live_updates')
+# Initialize bot and scheduler
+bot = Bot(TOKEN)
+app = ApplicationBuilder().token(TOKEN).build()
+scheduler = AsyncIOScheduler(timezone=utc)
+scheduler.add_job(live_updates, 'interval', seconds=30)
 scheduler.start()
 
-updater.start_polling()
-updater.idle()
+# Handlers
+app.add_handler(CommandHandler("start", start))
+
+# Run the bot
+app.run_polling()
