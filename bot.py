@@ -1,116 +1,56 @@
 import requests
 from bs4 import BeautifulSoup
-from telegram import Update, Bot
-from telegram.ext import Updater, CommandHandler, CallbackContext
+from telegram import Bot, Update
+from telegram.ext import CommandHandler, Updater, CallbackContext
+from apscheduler.schedulers.background import BackgroundScheduler
 import logging
-import time
 
-# Set up logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.basicConfig(level=logging.INFO)
 
-# Your Telegram bot token
-TOKEN = "7754892338:AAHkHR-su65KeFkyU7vsu1kkkO38f4IkQio"
+TOKEN = '7754892338:AAHkHR-su65KeFkyU7vsu1kkkO38f4IkQio'
+URL = 'https://www.cricbuzz.com/live-cricket-scores/114960/kkr-vs-rcb-1st-match-indian-premier-league-2025'
 
-# Users set
-users = set()
-last_update = None
+bot = Bot(token=TOKEN)
+scheduler = BackgroundScheduler()
+subscribed_users = set()
 
-# Function to fetch live score
-def get_live_score():
-    url = "https://www.cricbuzz.com/live-cricket-scores/114960/kkr-vs-rcb-1st-match-indian-premier-league-2025"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    response = requests.get(url, headers=headers)
-    soup = BeautifulSoup(response.content, "html.parser")
-
+def fetch_live_score():
     try:
-        # Match title
-        match_title = soup.find("h1", class_="cb-nav-hdr cb-font-18 line-ht24").get_text(strip=True)
+        response = requests.get(URL, headers={'User-Agent': 'Mozilla/5.0'})
+        soup = BeautifulSoup(response.text, 'html.parser')
 
-        # Score and over
-        score_section = soup.find("div", class_="cb-col cb-col-100 cb-min-txt")
-        over = score_section.find("span", class_="cb-col cb-col-8 text-bold text-black text-right").get_text(strip=True)
-        score = score_section.find("span", class_="cb-col cb-col-8 text-bold text-black").get_text(strip=True)
+        # Live score summary
+        score_section = soup.find('div', class_='cb-min-inf cb-col-100 cb-col cb-com-ln')
+        live_score = score_section.get_text(strip=True) if score_section else 'Live score not found'
 
-        # Batsmen info
-        batsmen = soup.find_all("div", class_="cb-col cb-col-50")
-        batsman_info = []
+        # Current batsman & bowler info
+        batsmen = soup.find_all('div', class_='cb-col cb-col-100 cb-scrd-itms')
+        batsman_info = ''
         for batsman in batsmen[:2]:
-            name = batsman.find("div", class_="cb-col cb-col-33").get_text(strip=True)
-            stats = batsman.find_all("div", class_="cb-col cb-col-33 text-right")
-            runs = stats[0].get_text(strip=True)
-            balls = stats[1].get_text(strip=True)
-            batsman_info.append(f"{name} {runs}({balls})")
+            batsman_info += batsman.get_text(strip=True) + '\n'
 
-        # Bowler info (placeholder if not found)
-        bowler_section = soup.find("div", class_="cb-col cb-col-100 cb-min-bowl")
-        if bowler_section:
-            bowler_name = bowler_section.find("a").get_text(strip=True)
-            bowler_stats = bowler_section.find_all("div", class_="cb-col cb-col-33 text-right")
-            bowler_overs = bowler_stats[0].get_text(strip=True)
-            bowler_runs = bowler_stats[1].get_text(strip=True)
-            bowler_wickets = bowler_stats[2].get_text(strip=True)
-        else:
-            bowler_name = "N/A"
-            bowler_overs = "0"
-            bowler_runs = "0"
-            bowler_wickets = "0"
+        # Latest ball commentary
+        commentary_section = soup.find('div', class_='cb-col cb-col-100 cb-com-ln')
+        commentary = commentary_section.get_text(strip=True) if commentary_section else 'Commentary not found'
 
-        # Last ball commentary
-        commentary_section = soup.find("div", class_="cb-col cb-col-100 cb-com-ln")
-        last_ball = commentary_section.find("div", class_="cb-col cb-col-100 cb-com-ln-text").get_text(strip=True)
+        message = f'🏏 *Live IPL Score Update* 🏏\n\n*{live_score}*\n\n{batsman_info}\n🎙️ {commentary}'
 
-        message = (
-            f"🏏 *{match_title}*\n\n"
-            f"🕒 *{over}*\n"
-            f"⚡️ {last_ball}\n\n"
-            f"*बल्लेबाज:*\n"
-            f"{batsman_info[0]}\n"
-            f"{batsman_info[1]}\n\n"
-            f"*गेंदबाज:*\n"
-            f"{bowler_name} - {bowler_wickets}/{bowler_runs} ({bowler_overs} ओवर)\n\n"
-            f"*स्कोर:*\n"
-            f"{score}"
-        )
-
-        return message
-
+        for user_id in subscribed_users:
+            bot.send_message(chat_id=user_id, text=message, parse_mode='Markdown')
     except Exception as e:
         logging.error(f"Error fetching live score: {e}")
-        return None
 
-# /start handler
 def start(update: Update, context: CallbackContext):
-    chat_id = update.message.chat_id
-    users.add(chat_id)
-    context.bot.send_message(chat_id=chat_id, text="✅ लाइव IPL अपडेट्स शुरू! /stop भेजकर बंद करें।")
+    user_id = update.message.chat_id
+    subscribed_users.add(user_id)
+    update.message.reply_text('You are now subscribed to Live IPL updates! ✅')
 
-# /stop handler
-def stop(update: Update, context: CallbackContext):
-    chat_id = update.message.chat_id
-    users.discard(chat_id)
-    context.bot.send_message(chat_id=chat_id, text="🛑 लाइव अपडेट्स बंद कर दिए गए हैं।")
+updater = Updater(token=TOKEN, use_context=True)
+dp = updater.dispatcher
+dp.add_handler(CommandHandler('start', start))
 
-# Send updates
-def live_updates(context: CallbackContext):
-    global last_update
-    message = get_live_score()
-    if message and message != last_update:
-        last_update = message
-        for user in users:
-            context.bot.send_message(chat_id=user, text=message, parse_mode='Markdown')
+scheduler.add_job(fetch_live_score, 'interval', seconds=30, id='live_updates')
+scheduler.start()
 
-# Main function
-def main():
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
-
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("stop", stop))
-
-    updater.job_queue.run_repeating(live_updates, interval=30, first=0)
-
-    updater.start_polling()
-    updater.idle()
-
-if __name__ == '__main__':
-    main()
+updater.start_polling()
+updater.idle()
